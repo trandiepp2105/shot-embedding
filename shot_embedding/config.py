@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Optional
+from typing import List, Optional
 
 
 @dataclass
@@ -14,6 +14,7 @@ class PipelineConfig:
 
     start_index: int = 0
     end_index: Optional[int] = None
+    video_ids: Optional[List[str]] = None
 
     clip_model_name: str = "ViT-H-14-quickgelu"
     clip_pretrained: str = "dfn5b"

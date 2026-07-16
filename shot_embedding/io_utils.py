@@ -31,6 +31,24 @@ class DatasetScanner:
                 }
             )
 
+        if self.config.video_ids:
+            items_by_video_name = {item["video_name"]: item for item in items}
+            filtered_items = []
+            missing_video_ids = []
+
+            for video_id in self.config.video_ids:
+                normalized_video_id = str(video_id)
+                item = items_by_video_name.get(normalized_video_id)
+                if item is None:
+                    missing_video_ids.append(normalized_video_id)
+                    continue
+                filtered_items.append(item)
+
+            for video_id in missing_video_ids:
+                print(f"[WARN] Missing video or shots file for requested video id: {video_id}")
+
+            return filtered_items
+
         start = max(0, int(self.config.start_index))
         end = self.config.end_index
 

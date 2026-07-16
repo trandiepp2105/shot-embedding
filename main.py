@@ -18,6 +18,13 @@ def parse_args():
 
     parser.add_argument("--start_index", type=int, default=0)
     parser.add_argument("--end_index", type=int, default=None)
+    parser.add_argument(
+        "--video_ids",
+        type=str,
+        nargs="+",
+        default=None,
+        help="Optional list of video ids. If provided, these video ids are used instead of start/end index.",
+    )
 
     parser.add_argument("--clip_pretrained", type=str, default="dfn5b")
     parser.add_argument("--batch_size", type=int, default=256)
@@ -37,6 +44,7 @@ def main():
         pool_temperature=args.pool_temperature,
         start_index=args.start_index,
         end_index=args.end_index,
+        video_ids=args.video_ids,
         clip_model_name="ViT-H-14-quickgelu",
         clip_pretrained=args.clip_pretrained,
         batch_size=args.batch_size,
