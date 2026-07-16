@@ -130,9 +130,10 @@ class VideoProcessor:
         reader: VideoFrameReader,
         sampled_shots: List[Dict[str, Any]],
         video_name: str,
-    ) -> List[np.ndarray]:
+    ) -> List[Dict[str, Any]]:
         frame_refs: List[tuple[int, int]] = []
         embeddings_by_shot: List[List[np.ndarray]] = [list() for _ in sampled_shots]
+        valid_frame_indices_by_shot: List[List[int]] = [list() for _ in sampled_shots]
 
         for shot_index, sampled_shot in enumerate(sampled_shots):
             for frame_index in sampled_shot["sampled_frame_indices"]:
@@ -147,27 +148,43 @@ class VideoProcessor:
         ):
             batch_refs = frame_refs[start:start + self.config.batch_size]
             batch_images: List[Image.Image] = []
-            valid_batch_refs: List[int] = []
+            valid_batch_refs: List[tuple[int, int]] = []
 
             for shot_index, frame_index in batch_refs:
-                image = reader.read_frame(frame_index)
+                image, actual_frame_index = reader.read_frame_with_fallback(frame_index)
                 if image is not None:
                     batch_images.append(image)
-                    valid_batch_refs.append(shot_index)
+                    valid_batch_refs.append((shot_index, int(actual_frame_index)))
 
             if not batch_images:
                 continue
 
             batch_embeddings = self.embedding_builder.embedder.encode_images(batch_images)
-            for shot_index, embedding in zip(valid_batch_refs, batch_embeddings):
+            for (shot_index, actual_frame_index), embedding in zip(valid_batch_refs, batch_embeddings):
                 embeddings_by_shot[shot_index].append(embedding)
+                valid_frame_indices_by_shot[shot_index].append(actual_frame_index)
 
-        outputs: List[np.ndarray] = []
+        outputs: List[Dict[str, Any]] = []
         for shot_index, shot_embeddings in enumerate(embeddings_by_shot):
+            if len(shot_embeddings) == 0:
+                shot = sampled_shots[shot_index]["shot"]
+                midpoint = (int(shot["start_frame"]) + int(shot["end_frame"])) // 2
+                image, actual_frame_index = reader.read_frame_with_fallback(midpoint)
+                if image is not None and actual_frame_index is not None:
+                    fallback_embedding = self.embedding_builder.embedder.encode_images([image])[0]
+                    shot_embeddings.append(fallback_embedding.astype(np.float32))
+                    valid_frame_indices_by_shot[shot_index].append(int(actual_frame_index))
+
             if len(shot_embeddings) == 0:
                 shot_id = sampled_shots[shot_index]["shot"]["shot_id"]
                 raise RuntimeError(f"No embeddings collected for shot_id={shot_id}")
-            outputs.append(np.stack(shot_embeddings, axis=0).astype(np.float32))
+
+            outputs.append(
+                {
+                    "embeddings": np.stack(shot_embeddings, axis=0).astype(np.float32),
+                    "valid_frame_indices": valid_frame_indices_by_shot[shot_index],
+                }
+            )
 
         return outputs
 
@@ -188,11 +205,11 @@ class VideoProcessor:
 
             embeddings_by_shot = self._encode_sampled_shots(reader, sampled_shots, video_name)
 
-            for sampled_shot, embeddings in zip(sampled_shots, embeddings_by_shot):
+            for sampled_shot, shot_result in zip(sampled_shots, embeddings_by_shot):
                 processed_shot = self.embedding_builder.build_shot_output(
                     shot=sampled_shot["shot"],
-                    sampled_frame_indices=sampled_shot["sampled_frame_indices"],
-                    embeddings=embeddings,
+                    sampled_frame_indices=shot_result["valid_frame_indices"],
+                    embeddings=shot_result["embeddings"],
                 )
                 processed_shots.append(processed_shot)
         finally:

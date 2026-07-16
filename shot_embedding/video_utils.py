@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Tuple
 
 import cv2
 from PIL import Image
@@ -18,7 +18,7 @@ class VideoFrameReader:
         self.height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         self._next_frame_index: Optional[int] = None
 
-    def read_frame(self, frame_index: int) -> Optional[Image.Image]:
+    def _read_frame_once(self, frame_index: int) -> Optional[Image.Image]:
         if self.frame_count <= 0:
             return None
 
@@ -41,6 +41,29 @@ class VideoFrameReader:
         self._next_frame_index = frame_index + 1
         frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
         return Image.fromarray(frame_rgb)
+
+    def read_frame(self, frame_index: int) -> Optional[Image.Image]:
+        return self._read_frame_once(frame_index)
+
+    def read_frame_with_fallback(
+        self,
+        frame_index: int,
+        fallback_radius: int = 6,
+    ) -> Tuple[Optional[Image.Image], Optional[int]]:
+        image = self._read_frame_once(frame_index)
+        if image is not None:
+            return image, int(frame_index)
+
+        for offset in range(1, max(0, int(fallback_radius)) + 1):
+            candidate_indices = [frame_index - offset, frame_index + offset]
+            for candidate_index in candidate_indices:
+                if candidate_index < 0 or candidate_index >= self.frame_count:
+                    continue
+                image = self._read_frame_once(candidate_index)
+                if image is not None:
+                    return image, int(candidate_index)
+
+        return None, None
 
     def close(self):
         self.cap.release()
